@@ -1,10 +1,23 @@
-import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js"
+import {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+  TextChannel
+} from "discord.js"
 import * as dotenv from "dotenv"
 
 dotenv.config()
 
 const BOT_TOKEN = process.env.BOT_TOKEN
 const GOLD_API_KEY = String(process.env.GOLD_API_KEY)
+
+if (!BOT_TOKEN || !GOLD_API_KEY) {
+  throw new Error("Missing required environment variables")
+}
 
 const client = new Client({
   intents: [
@@ -15,114 +28,226 @@ const client = new Client({
 })
 
 // Default values
-let threshold = 0.0001 // in percentage
+let threshold = 0.0001
 let defaultChannel = "general"
-let notificationInterval = 60000 // in milliseconds
-let prefix = "!"
+let notificationInterval = 60000
 let includePrices = false
+let notificationTimer: NodeJS.Timeout | null = null
 
-client.on("ready", () => {
-  console.log(`Logged in as ${client.user?.displayName}!`)
+// Define slash commands
+const commands = [
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Get a list of available commands"),
+  new SlashCommandBuilder()
+    .setName("setchannel")
+    .setDescription("Set the channel for notifications")
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("The channel to send notifications to")
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName("setthreshold")
+    .setDescription("Set the percentage threshold for price changes")
+    .addNumberOption((option) =>
+      option
+        .setName("percentage")
+        .setDescription("The percentage threshold")
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName("setnotificationtime")
+    .setDescription("Set notification interval in minutes")
+    .addIntegerOption((option) =>
+      option
+        .setName("minutes")
+        .setDescription("Interval in minutes")
+        .setRequired(true)
+        .setMinValue(1)
+    ),
+  new SlashCommandBuilder()
+    .setName("goldpricesonly")
+    .setDescription("Receive notifications for gold prices only"),
+  new SlashCommandBuilder()
+    .setName("goldnewsonly")
+    .setDescription("Receive notifications for news about gold only"),
+  new SlashCommandBuilder()
+    .setName("both")
+    .setDescription("Receive notifications for both gold prices and news"),
+  new SlashCommandBuilder()
+    .setName("getgoldpricenow")
+    .setDescription("Get the current gold price")
+]
+
+// Register slash commands when bot is ready
+client.once("ready", async () => {
+  console.log(`Logged in as ${client.user?.tag}!`)
+
+  const rest = new REST({ version: "10" }).setToken(BOT_TOKEN)
+
+  try {
+    console.log("Refreshing slash commands...")
+    await rest.put(Routes.applicationCommands(client.user!.id), {
+      body: commands
+    })
+    console.log("Successfully registered slash commands")
+    runBot(includePrices)
+  } catch (error) {
+    console.error("Error registering slash commands:", error)
+  }
 })
 
-client.on("message", async (message) => {
-  if (message.author.bot) return
+// Handle slash commands
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return
 
-  if (message.content === `${prefix}help`) {
-    const embed = new EmbedBuilder()
-      .setTitle("Available Commands")
-      .addFields(
-        {
-          name: `${prefix}help`,
-          value: "Get a list of available commands."
-        },
-        {
-          name: `${prefix}setchannel <channel name>`,
-          value: "Set the channel where notifications will be sent."
-        }
-      )
-      .addFields(
-        {
-          name: `${prefix}setthreshold <percentage>`,
-          value: "Set the percentage threshold for price change notifications."
-        },
-        {
-          name: `${prefix}setnotificationtime <minute>`,
-          value: "Set the time when notifications will be sent."
-        }
-      )
-      .addFields({
-        name: `${prefix}goldpricesonly`,
-        value: "Receive notifications for gold prices only."
-      })
-      .addFields(
-        {
-          name: `${prefix}both`,
-          value: "Receive notifications for both gold prices and news."
-        },
-        {
-          name: `${prefix}getgoldpricenow`,
-          value: "Get the current gold price."
-        }
-      )
-      .setColor("#F1C40F")
-    message.channel.send({
-      embeds: [embed]
+  try {
+    switch (interaction.commandName) {
+      case "help":
+        await handleHelp(interaction)
+        break
+      case "setchannel":
+        await handleSetChannel(interaction)
+        break
+      case "setthreshold":
+        await handleSetThreshold(interaction)
+        break
+      case "setnotificationtime":
+        await handleSetNotificationTime(interaction)
+        break
+      case "goldpricesonly":
+        await handleGoldPricesOnly(interaction)
+        break
+      case "goldnewsonly":
+        await handleGoldNewsOnly(interaction)
+        break
+      case "both":
+        await handleBoth(interaction)
+        break
+      case "getgoldpricenow":
+        await handleGetGoldPriceNow(interaction)
+        break
+    }
+  } catch (error) {
+    console.error("Error handling command:", error)
+    await interaction.reply({
+      content: "There was an error executing this command!",
+      ephemeral: true
     })
   }
-
-  if (message.content.startsWith(`${prefix}setchannel`)) {
-    const channel = message.mentions.channels.first()
-    if (!channel) return message.reply("Invalid channel!")
-    defaultChannel = channel.name
-    message.reply(`Alerts will be sent to ${channel} from now on.`)
-  }
-  if (message.content.startsWith(`${prefix}setthreshold`)) {
-    const percentage = message.content.split(" ")[1]
-    if (!Number(percentage)) {
-      message.reply(`Please enter a valid number for percentage threshold.`)
-    } else {
-      threshold = parseInt(percentage)
-      message.reply(`Percentage threshold set to ${threshold}%.`)
-    }
-  }
-  if (message.content.startsWith(`${prefix}setnotificationtime`)) {
-    const [interval] = message.content.split(" ").slice(1)
-    if (!Number(interval) || interval < 1) {
-      message.reply(
-        `Please enter a valid positive integer for the notification interval in minutes.`
-      )
-    } else {
-      notificationInterval = parseInt(interval) * 60 * 1000 // convert minutes to milliseconds
-      message.reply(`Notification interval set to ${interval} minutes.`)
-    }
-  }
-
-  if (message.content === `${prefix}goldpricesonly`) {
-    includePrices = true
-    message.reply("You will now receive notifications for gold prices only.")
-    runBot(includePrices)
-  }
-  if (message.content === `${prefix}goldnewsonly`) {
-    includePrices = false
-    message.reply(
-      "You will now receive notifications for news about gold only."
-    )
-    runBot(includePrices)
-  }
-  if (message.content === `${prefix}both`) {
-    includePrices = true
-    message.reply(
-      "You will now receive notifications for both gold prices and news."
-    )
-    runBot(includePrices)
-  }
-  if (message.content === `${prefix}getgoldpricenow`) {
-    const goldData = await getGoldPrices()
-    const price = goldData.price
-    message.reply(`The current gold price is **$${price}** per ounce.`)
-  }
 })
+
+// Command handlers
+async function handleHelp(interaction: ChatInputCommandInteraction) {
+  const embed = new EmbedBuilder()
+    .setTitle("Available Commands")
+    .addFields(
+      { name: `/help`, value: "Get a list of available commands." },
+      {
+        name: `/setchannel`,
+        value: "Set the channel where notifications will be sent."
+      },
+      {
+        name: `/setthreshold`,
+        value: "Set the percentage threshold for price change notifications."
+      },
+      {
+        name: `/setnotificationtime`,
+        value: "Set the notification interval in minutes."
+      },
+      {
+        name: `/goldpricesonly`,
+        value: "Receive notifications for gold prices only."
+      },
+      {
+        name: `/goldnewsonly`,
+        value: "Receive notifications for news about gold only."
+      },
+      {
+        name: `/both`,
+        value: "Receive notifications for both gold prices and news."
+      },
+      { name: `/getgoldpricenow`, value: "Get the current gold price." }
+    )
+    .setColor("#F1C40F")
+
+  await interaction.reply({ embeds: [embed] })
+}
+
+async function handleSetChannel(interaction: ChatInputCommandInteraction) {
+  const channel = interaction.options.getChannel("channel")
+  if (!channel || !(channel instanceof TextChannel)) {
+    await interaction.reply("Please select a valid text channel!")
+    return
+  }
+  defaultChannel = channel.name
+  await interaction.reply(`Alerts will be sent to ${channel} from now on.`)
+}
+
+async function handleSetThreshold(interaction: ChatInputCommandInteraction) {
+  const percentage = interaction.options.getNumber("percentage")
+  if (percentage === null) {
+    await interaction.reply("Please provide a valid percentage!")
+    return
+  }
+  threshold = percentage
+  await interaction.reply(`Percentage threshold set to ${threshold}%.`)
+}
+
+async function handleSetNotificationTime(
+  interaction: ChatInputCommandInteraction
+) {
+  const minutes = interaction.options.getInteger("minutes")
+  if (!minutes || minutes < 1) {
+    await interaction.reply(
+      "Please provide a valid positive number of minutes!"
+    )
+    return
+  }
+  notificationInterval = minutes * 60 * 1000
+  await interaction.reply(`Notification interval set to ${minutes} minutes.`)
+  runBot(includePrices) // Restart the notification timer
+}
+
+async function handleGoldPricesOnly(interaction: ChatInputCommandInteraction) {
+  includePrices = true
+  await interaction.reply(
+    "You will now receive notifications for gold prices only."
+  )
+  runBot(includePrices)
+}
+
+async function handleGoldNewsOnly(interaction: ChatInputCommandInteraction) {
+  includePrices = false
+  await interaction.reply(
+    "You will now receive notifications for news about gold only."
+  )
+  runBot(includePrices)
+}
+
+async function handleBoth(interaction: ChatInputCommandInteraction) {
+  includePrices = true
+  await interaction.reply(
+    "You will now receive notifications for both gold prices and news."
+  )
+  runBot(includePrices)
+}
+
+async function handleGetGoldPriceNow(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply() // For potentially slow API calls
+  try {
+    const goldData = await getGoldPrices()
+    await interaction.editReply(
+      `The current gold price is **$${goldData.price}** per ounce.`
+    )
+  } catch (error) {
+    await interaction.editReply(
+      "Sorry, I could not fetch the current gold price."
+    )
+  }
+}
 
 const getGoldPrices = async () => {
   try {
@@ -201,11 +326,12 @@ const sendNotification = async (includePrices: boolean) => {
 }
 
 const runBot = (includePrices: boolean) => {
-  setInterval(async () => {
+  if (notificationTimer) {
+    clearInterval(notificationTimer)
+  }
+  notificationTimer = setInterval(async () => {
     await sendNotification(includePrices)
   }, notificationInterval)
 }
 
 client.login(BOT_TOKEN)
-
-runBot(includePrices)
