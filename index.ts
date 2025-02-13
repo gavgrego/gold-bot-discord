@@ -49,15 +49,6 @@ const commands = [
         .setRequired(true)
     ),
   new SlashCommandBuilder()
-    .setName("setthreshold")
-    .setDescription("Set the percentage threshold for price changes")
-    .addNumberOption((option) =>
-      option
-        .setName("percentage")
-        .setDescription("The percentage threshold")
-        .setRequired(true)
-    ),
-  new SlashCommandBuilder()
     .setName("setnotificationtime")
     .setDescription("Set notification interval in minutes")
     .addIntegerOption((option) =>
@@ -68,16 +59,7 @@ const commands = [
         .setMinValue(1)
     ),
   new SlashCommandBuilder()
-    .setName("goldpricesonly")
-    .setDescription("Receive notifications for gold prices only"),
-  new SlashCommandBuilder()
-    .setName("goldnewsonly")
-    .setDescription("Receive notifications for news about gold only"),
-  new SlashCommandBuilder()
-    .setName("both")
-    .setDescription("Receive notifications for both gold prices and news"),
-  new SlashCommandBuilder()
-    .setName("getgoldpricenow")
+    .setName("getprice")
     .setDescription("Get the current gold price")
 ]
 
@@ -108,25 +90,13 @@ client.on("interactionCreate", async (interaction) => {
       case "help":
         await handleHelp(interaction)
         break
-      case "setchannel":
+      case "setChannel":
         await handleSetChannel(interaction)
         break
-      case "setthreshold":
-        await handleSetThreshold(interaction)
-        break
-      case "setnotificationtime":
+      case "setNotificationTime":
         await handleSetNotificationTime(interaction)
         break
-      case "goldpricesonly":
-        await handleGoldPricesOnly(interaction)
-        break
-      case "goldnewsonly":
-        await handleGoldNewsOnly(interaction)
-        break
-      case "both":
-        await handleBoth(interaction)
-        break
-      case "getgoldpricenow":
+      case "getPrice":
         await handleGetGoldPriceNow(interaction)
         break
     }
@@ -146,30 +116,14 @@ async function handleHelp(interaction: ChatInputCommandInteraction) {
     .addFields(
       { name: `/help`, value: "Get a list of available commands." },
       {
-        name: `/setchannel`,
+        name: `/setChannel`,
         value: "Set the channel where notifications will be sent."
       },
       {
-        name: `/setthreshold`,
-        value: "Set the percentage threshold for price change notifications."
-      },
-      {
-        name: `/setnotificationtime`,
+        name: `/setNotificationTime`,
         value: "Set the notification interval in minutes."
       },
-      {
-        name: `/goldpricesonly`,
-        value: "Receive notifications for gold prices only."
-      },
-      {
-        name: `/goldnewsonly`,
-        value: "Receive notifications for news about gold only."
-      },
-      {
-        name: `/both`,
-        value: "Receive notifications for both gold prices and news."
-      },
-      { name: `/getgoldpricenow`, value: "Get the current gold price." }
+      { name: `/getPrice`, value: "Get the current gold price." }
     )
     .setColor("#F1C40F")
 
@@ -209,30 +163,6 @@ async function handleSetNotificationTime(
   notificationInterval = minutes * 60 * 1000
   await interaction.reply(`Notification interval set to ${minutes} minutes.`)
   runBot(includePrices) // Restart the notification timer
-}
-
-async function handleGoldPricesOnly(interaction: ChatInputCommandInteraction) {
-  includePrices = true
-  await interaction.reply(
-    "You will now receive notifications for gold prices only."
-  )
-  runBot(includePrices)
-}
-
-async function handleGoldNewsOnly(interaction: ChatInputCommandInteraction) {
-  includePrices = false
-  await interaction.reply(
-    "You will now receive notifications for news about gold only."
-  )
-  runBot(includePrices)
-}
-
-async function handleBoth(interaction: ChatInputCommandInteraction) {
-  includePrices = true
-  await interaction.reply(
-    "You will now receive notifications for both gold prices and news."
-  )
-  runBot(includePrices)
 }
 
 async function handleGetGoldPriceNow(interaction: ChatInputCommandInteraction) {
