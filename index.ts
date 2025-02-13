@@ -90,13 +90,13 @@ client.on("interactionCreate", async (interaction) => {
       case "help":
         await handleHelp(interaction)
         break
-      case "setChannel":
+      case "setchannel":
         await handleSetChannel(interaction)
         break
-      case "setNotificationTime":
+      case "setnotificationtime":
         await handleSetNotificationTime(interaction)
         break
-      case "getPrice":
+      case "getprice":
         await handleGetGoldPriceNow(interaction)
         break
     }
@@ -116,14 +116,14 @@ async function handleHelp(interaction: ChatInputCommandInteraction) {
     .addFields(
       { name: `/help`, value: "Get a list of available commands." },
       {
-        name: `/setChannel`,
+        name: `/setchannel`,
         value: "Set the channel where notifications will be sent."
       },
       {
-        name: `/setNotificationTime`,
+        name: `/setnotificationtime`,
         value: "Set the notification interval in minutes."
       },
-      { name: `/getPrice`, value: "Get the current gold price." }
+      { name: `/getprice`, value: "Get the current gold price." }
     )
     .setColor("#F1C40F")
 
@@ -138,16 +138,6 @@ async function handleSetChannel(interaction: ChatInputCommandInteraction) {
   }
   defaultChannel = channel.name
   await interaction.reply(`Alerts will be sent to ${channel} from now on.`)
-}
-
-async function handleSetThreshold(interaction: ChatInputCommandInteraction) {
-  const percentage = interaction.options.getNumber("percentage")
-  if (percentage === null) {
-    await interaction.reply("Please provide a valid percentage!")
-    return
-  }
-  threshold = percentage
-  await interaction.reply(`Percentage threshold set to ${threshold}%.`)
 }
 
 async function handleSetNotificationTime(
@@ -205,6 +195,8 @@ const sendNotification = async (includePrices: boolean) => {
       })
       var goldData = await response.json()
       console.log("done sending price alert")
+
+      console.log(goldData)
     } catch (error) {
       console.error(error)
     }
@@ -228,14 +220,12 @@ const sendNotification = async (includePrices: boolean) => {
   }
 
   if (message) {
-    // Find the first guild the bot is in
     const guild = client.guilds.cache.first()
     if (!guild) {
       console.error("Bot is not in any guild")
       return
     }
 
-    // Find the channel in the guild and ensure it's a text channel
     const channel = guild.channels.cache.find(
       (ch) => ch.name === defaultChannel && ch.isTextBased()
     )
@@ -249,7 +239,6 @@ const sendNotification = async (includePrices: boolean) => {
       .setDescription(message)
       .setTimestamp()
 
-    // Now TypeScript knows this is a text channel that can send messages
     channel.send({ embeds: [embed] })
     message = ""
   }
